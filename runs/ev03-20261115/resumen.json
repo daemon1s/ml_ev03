@@ -1,0 +1,18 @@
+{
+  "imagenes_train": 1141,
+  "imagenes_valid": 289,
+  "epocas_ejecutadas": 40,
+  "mejor_epoca": 36,
+  "mejor_val_loss": 1.0386345386505127,
+  "argumentos": {
+    "epochs": 40,
+    "frozen_epochs": 5,
+    "batch_size": 8,
+    "patience": 8,
+    "train_images": 0,
+    "valid_images": 0,
+    "seed": 42
+  },
+  "keras": "3.3.3",
+  "motor": "torch"
+}

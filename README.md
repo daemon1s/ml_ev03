@@ -31,6 +31,10 @@ Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 im�
 
 Los tests están en los archivos `test_*.py`.
 
+## Modelo entrenado
+
+La corrida final está en `runs/ev03-20261115/`: `best.keras` (el modelo), `history.csv` y `curvas.png` (entrenamiento), `resumen.json` y, en `evaluacion/`, `metricas.json` y la curva precisión-recall. Para usar el modelo sin entrenar, apunta `TRAIN_OUTPUT_DIR` a esa carpeta.
+
 ## Preparar el entorno
 
 Requiere Python 3.11. Las dependencias de entrenamiento y evaluación están en `requirements-pilot.txt`; el entrenamiento usa Keras 3 con motor PyTorch para aprovechar la GPU en Windows (`torch` y `torchvision` con CUDA, instalados aparte).

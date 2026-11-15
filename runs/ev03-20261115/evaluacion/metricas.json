@@ -1,0 +1,38 @@
+{
+  "modelo": "C:\\Users\\daemon\\Documents\\INACAP\\ml_ev03\\runs\\ev03-20261115\\best.keras",
+  "umbral_elegido_en_validacion": 0.39,
+  "validacion": {
+    "imagenes": 289,
+    "cajas": 298,
+    "ap50": 0.8832750955074212,
+    "ap50_95": 0.7454402564180167,
+    "umbral": 0.39,
+    "precision": 0.9737827715355806,
+    "recall": 0.87248322147651,
+    "f1": 0.9203539823008849,
+    "verdaderos_positivos": 260,
+    "falsos_positivos": 7,
+    "falsos_negativos": 38
+  },
+  "prueba": {
+    "imagenes": 139,
+    "cajas": 143,
+    "ap50": 0.9007910989533274,
+    "ap50_95": 0.7378781343816493,
+    "umbral": 0.39,
+    "precision": 0.9343065693430657,
+    "recall": 0.8951048951048951,
+    "f1": 0.9142857142857143,
+    "verdaderos_positivos": 128,
+    "falsos_positivos": 9,
+    "falsos_negativos": 15
+  },
+  "configuracion": {
+    "iou_para_aciertos": 0.5,
+    "nms_iou": 0.5,
+    "detecciones_maximas_por_imagen": 10,
+    "ranuras_del_decodificador": 100,
+    "confianza_minima_observada_en_prueba": 0.0010207974119111896,
+    "semilla": 42
+  }
+}
