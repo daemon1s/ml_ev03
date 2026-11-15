@@ -5,8 +5,6 @@ Detector de patentes vehiculares con YOLOv8 XS, entrenado con Keras 3, más una 
 - **Detección.** YOLOv8 XS (`keras-cv`) con aprendizaje por transferencia, entrenado sobre una clase, `Patente`. Ubica la patente; no lee texto.
 - **Lectura.** Una etapa aparte, elegida con `OCR_BACKEND`: Qwen3-VL 4B por Ollama (local) o Gemini (nube). No forma parte del modelo entrenado.
 
-La decisión de arquitectura, el origen de los datos, el aumento de datos, las métricas y el despliegue están en [docs/decision-modelo-y-datos.md](docs/decision-modelo-y-datos.md).
-
 ## Resultados
 
 Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 imágenes de `test`:
