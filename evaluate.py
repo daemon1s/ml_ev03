@@ -120,6 +120,9 @@ def mean_average_precision(detected, truths):
 def plot_pr_curve(detected, truths, operating, path):
     from PIL import Image, ImageDraw
 
+    from plotting import label_font
+
+    face = label_font()
     width, height, margin = 700, 520, 70
     image = Image.new('RGB', (width, height), 'white')
     draw = ImageDraw.Draw(image)
@@ -132,23 +135,26 @@ def plot_pr_curve(detected, truths, operating, path):
     draw.line([point(0, 1), point(0, 0), point(1, 0)], fill='black')
     for tick in (0.0, 0.25, 0.5, 0.75, 1.0):
         x, y = point(tick, 0)
-        draw.text((x - 8, y + 6), f'{tick:.2f}', fill='black')
+        draw.text((x - 12, y + 6), f'{tick:.2f}', fill='black', font=face)
         x, y = point(0, tick)
-        draw.text((18, y - 6), f'{tick:.2f}', fill='black')
+        draw.text((18, y - 8), f'{tick:.2f}', fill='black', font=face)
     if len(recall) > 1:
         draw.line([point(r, p) for r, p in zip(recall, precision)], fill=(31, 119, 180), width=2)
     x, y = point(operating['recall'], operating['precision'])
     draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=(214, 39, 40))
-    draw.text((margin, 15), 'Curva precisión-recall en prueba (IoU 0,5)', fill='black')
-    draw.text((margin, height - 35), 'Recall', fill='black')
-    draw.text((8, margin - 22), 'Precisión', fill='black')
-    draw.text((width - 330, 15), f'punto rojo: umbral {operating["umbral"]:.2f}', fill='black')
+    draw.text((margin, 15), 'Curva precisión-recall en prueba (IoU 0,5)', fill='black', font=face)
+    draw.text((margin, height - 35), 'Recall', fill='black', font=face)
+    draw.text((8, margin - 28), 'Precisión', fill='black', font=face)
+    draw.text((width - 280, 15), f'punto rojo: umbral {operating["umbral"]:.2f}', fill='black', font=face)
     image.save(path)
 
 
 def draw_examples(images, truths, detected, threshold, path, columns=4):
     from PIL import Image, ImageDraw
 
+    from plotting import label_font
+
+    face = label_font(14)
     size = images.shape[1]
     rows = -(-len(images) // columns)
     sheet = Image.new('RGB', (columns * size, rows * size), 'white')
@@ -161,8 +167,9 @@ def draw_examples(images, truths, detected, threshold, path, columns=4):
         for box, score in zip(boxes, confidence):
             if score >= threshold:
                 draw.rectangle(tuple(box), outline=(230, 30, 30), width=2)
-                draw.text((box[0] + 2, max(0, box[1] - 11)), f'{score:.2f}', fill=(230, 30, 30))
-        draw.text((4, 4), 'verde: etiqueta · rojo: predicción', fill='white')
+                draw.text((box[0] + 2, max(22, box[1] - 15)), f'{score:.2f}', fill=(255, 60, 60), font=face)
+        draw.rectangle((0, 0, size, 20), fill=(0, 0, 0))
+        draw.text((6, 2), 'verde: etiqueta · rojo: predicción', fill='white', font=face)
         sheet.paste(tile, ((index % columns) * size, (index // columns) * size))
     sheet.save(path)
 
@@ -192,7 +199,6 @@ def main():
         parser.error(f'{output} ya existe: bórrala o muévela antes de evaluar de nuevo')
 
     import keras
-    import keras_cv
 
     from pilot import sample
 
@@ -205,10 +211,14 @@ def main():
     test_truths = [np.asarray(boxes, dtype='float64').reshape(-1, 4) for boxes in test_boxes]
 
     detector = keras.saving.load_model(model_path, compile=False, safe_mode=True)
-    detector.prediction_decoder = keras_cv.layers.NonMaxSuppression(
-        bounding_box_format='xyxy', from_logits=False, iou_threshold=args.nms_iou,
-        confidence_threshold=DECODER_CONFIDENCE, max_detections=DECODER_DETECTIONS,
-    )
+    decoder = detector.prediction_decoder
+    decoder.iou_threshold = args.nms_iou
+    decoder.confidence_threshold = DECODER_CONFIDENCE
+    decoder.max_detections = DECODER_DETECTIONS
+    detector.make_predict_function(force=True)
+    applied = (decoder.iou_threshold, decoder.confidence_threshold, decoder.max_detections)
+    if applied != (args.nms_iou, DECODER_CONFIDENCE, DECODER_DETECTIONS):
+        raise RuntimeError(f'El decodificador no tomó la configuración pedida: {applied}')
 
     def run_split(images):
         output_raw = detector.predict(images, batch_size=args.batch_size, verbose=0)

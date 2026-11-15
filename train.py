@@ -27,35 +27,43 @@ def write_history(history, output):
 def plot_curves(history, path, boundary=None):
     from PIL import Image, ImageDraw
 
-    width, height, margin = 900, 500, 70
+    from plotting import label_font
+
+    width, height, margin = 900, 520, 80
+    face = label_font()
     image = Image.new('RGB', (width, height), 'white')
     draw = ImageDraw.Draw(image)
     epochs = len(history['loss'])
     values = [value for key in LOSS_KEYS for value in history[key]]
-    low, high = min(values), max(values)
-    span = (high - low) or 1.0
+    if min(values) <= 0:
+        raise ValueError('La escala logarítmica exige pérdidas positivas')
+    low_log = math.floor(math.log10(min(values)) * 10) / 10
+    high_log = math.ceil(math.log10(max(values)) * 10) / 10
+    span = (high_log - low_log) or 1.0
 
     def point(index, value):
         x = margin + (width - 2 * margin) * index / max(1, epochs - 1)
-        y = height - margin - (height - 2 * margin) * (value - low) / span
+        y = height - margin - (height - 2 * margin) * (math.log10(value) - low_log) / span
         return x, y
 
+    for decade in range(math.ceil(low_log), math.floor(high_log) + 1):
+        x, y = point(0, 10 ** decade)
+        draw.line([(margin, y), (width - margin, y)], fill=(225, 225, 225))
+        draw.text((10, y - 8), f'{10 ** decade:g}', fill='black', font=face)
     draw.line([(margin, margin), (margin, height - margin), (width - margin, height - margin)], fill='black')
     if boundary is not None and 0 < boundary < epochs:
-        x = point(boundary - 1, low)[0]
+        x = point(boundary - 1, min(values))[0]
         draw.line([(x, margin), (x, height - margin)], fill=(160, 160, 160))
-        draw.text((x + 4, margin), 'backbone descongelado', fill=(100, 100, 100))
+        draw.text((x + 6, margin), 'backbone descongelado', fill=(100, 100, 100), font=face)
     for key, color in zip(LOSS_KEYS, ((31, 119, 180), (214, 39, 40))):
         points = [point(index, value) for index, value in enumerate(history[key])]
         if len(points) > 1:
             draw.line(points, fill=color, width=2)
         for x, y in points:
             draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
-    draw.text((margin, 15), 'Pérdida por época', fill='black')
-    draw.text((margin, height - 40), f'época 1 a {epochs}', fill='black')
-    draw.text((8, margin), f'{high:.3f}', fill='black')
-    draw.text((8, height - margin - 10), f'{low:.3f}', fill='black')
-    draw.text((width - 260, 15), 'azul: entrenamiento · rojo: validación', fill='black')
+    draw.text((margin, 15), 'Pérdida por época (escala logarítmica)', fill='black', font=face)
+    draw.text((margin, height - 45), f'épocas 1 a {epochs} · mínimo validación {min(history["val_loss"]):.3f}', fill='black', font=face)
+    draw.text((width - 330, 15), 'azul: entrenamiento · rojo: validación', fill='black', font=face)
     image.save(path)
 
 
