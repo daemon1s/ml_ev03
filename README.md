@@ -87,5 +87,5 @@ Con Gemini, `OCR_BACKEND=gemini` y las variables que lista `.env.example`, inclu
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
+.\.venv-torch\Scripts\python.exe -m unittest discover -p "test_*.py"
 ```
