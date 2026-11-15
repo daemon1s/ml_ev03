@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detector de patentes</title>
+<style>
+  :root {
+    --fondo: #0f1419;
+    --superficie: #1a212b;
+    --borde: #2b3542;
+    --texto: #e8edf3;
+    --suave: #9aa7b6;
+    --acento: #4cc2ff;
+    --ok: #3ddc97;
+    --alerta: #ffb454;
+    --error: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .sub { color: var(--suave); margin: 0 0 24px; }
+  #zona {
+    border: 2px dashed var(--borde);
+    border-radius: 12px;
+    background: var(--superficie);
+    padding: 40px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #zona:hover, #zona.activa { border-color: var(--acento); background: #1d2733; }
+  #zona strong { color: var(--acento); }
+  #zona small { display: block; color: var(--suave); margin-top: 6px; }
+  #archivo { display: none; }
+  #estado {
+    margin: 24px 0 12px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--superficie);
+    border-left: 4px solid var(--borde);
+    display: none;
+  }
+  #estado.ok { border-left-color: var(--ok); display: block; }
+  #estado.vacio { border-left-color: var(--alerta); display: block; }
+  #estado.error { border-left-color: var(--error); display: block; }
+  #estado.cargando { border-left-color: var(--acento); display: block; }
+  #detalle { color: var(--suave); font-size: .9rem; margin-top: 4px; }
+  #resultado { width: 100%; border-radius: 12px; border: 1px solid var(--borde); display: none; }
+  footer { margin-top: 32px; color: var(--suave); font-size: .85rem; }
+  :focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Detector de patentes</h1>
+  <p class="sub">Sube una foto y el modelo marca dónde está la patente.</p>
+
+  <div id="zona" tabindex="0" role="button" aria-label="Elegir una foto">
+    <strong>Elige una foto</strong> o arrástrala aquí
+    <small>JPG o PNG, hasta 15 MB</small>
+  </div>
+  <input id="archivo" type="file" accept="image/*">
+
+  <div id="estado" role="status" aria-live="polite">
+    <div id="mensaje"></div>
+    <div id="detalle"></div>
+  </div>
+  <img id="resultado" alt="Foto con la patente marcada">
+
+  <footer>Modelo YOLOv8 XS entrenado con Keras 3. Marca la ubicación de la patente; no lee los caracteres.</footer>
+</main>
+<script>
+  const zona = document.getElementById('zona');
+  const archivo = document.getElementById('archivo');
+  const estado = document.getElementById('estado');
+  const mensaje = document.getElementById('mensaje');
+  const detalle = document.getElementById('detalle');
+  const resultado = document.getElementById('resultado');
+
+  function mostrar(clase, texto, extra) {
+    estado.className = clase;
+    mensaje.textContent = texto;
+    detalle.textContent = extra || '';
+  }
+
+  async function enviar(foto) {
+    resultado.style.display = 'none';
+    mostrar('cargando', 'Analizando la foto…');
+    try {
+      const respuesta = await fetch('/detectar', { method: 'POST', body: foto });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) {
+        mostrar('error', datos.error || 'No se pudo analizar la foto');
+        return;
+      }
+      resultado.src = datos.imagen;
+      resultado.style.display = 'block';
+      const umbral = Math.round(datos.umbral * 100);
+      const tiempo = `${datos.milisegundos} ms · umbral de confianza ${umbral} %`;
+      if (datos.detecciones.length === 0) {
+        mostrar('vacio', 'No se detectó ninguna patente', tiempo);
+        return;
+      }
+      const confianzas = datos.detecciones.map(d => Math.round(d.confianza * 100) + ' %').join(', ');
+      const titulo = datos.detecciones.length === 1
+        ? 'Patente detectada'
+        : `${datos.detecciones.length} patentes detectadas`;
+      mostrar('ok', `${titulo} · confianza ${confianzas}`, tiempo);
+    } catch (error) {
+      mostrar('error', 'No se pudo contactar al servidor');
+    }
+  }
+
+  function elegir(lista) {
+    if (lista && lista.length) enviar(lista[0]);
+  }
+
+  zona.addEventListener('click', () => archivo.click());
+  zona.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); archivo.click(); } });
+  archivo.addEventListener('change', () => elegir(archivo.files));
+  zona.addEventListener('dragover', e => { e.preventDefault(); zona.classList.add('activa'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('activa'));
+  zona.addEventListener('drop', e => { e.preventDefault(); zona.classList.remove('activa'); elegir(e.dataTransfer.files); });
+</script>
+</body>
+</html>
