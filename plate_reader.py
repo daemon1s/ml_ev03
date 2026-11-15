@@ -4,7 +4,7 @@ import json
 import re
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from audit_review import NoRedirect, required_env
 
@@ -17,6 +17,14 @@ FORMATS = (
     re.compile(r'[A-Z]{3}[0-9]{2}'),
 )
 LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1'}
+BACKENDS = ('ollama', 'gemini')
+GEMINI_MODEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9.\-]*')
+GEMINI_SCHEMA = {
+    'type': 'OBJECT',
+    'properties': {'texto': {'type': 'STRING'}},
+    'required': ['texto'],
+}
+MAX_RESPONSE_BYTES = 65536
 REQUEST_TIMEOUT = 90
 PROMPT = (
     'La imagen es el recorte de una patente vehicular chilena. '
@@ -39,16 +47,11 @@ class OcrConfig:
     min_crop_width: int
     model: str
     endpoint: str
+    backend: str = 'ollama'
+    api_key: str = field(default='', repr=False)
 
 
-def config_from_env():
-    min_confidence = float(required_env('OCR_MIN_CONFIDENCE'))
-    if not 0 <= min_confidence <= 1:
-        raise ValueError('OCR_MIN_CONFIDENCE debe estar entre 0 y 1')
-    min_crop_width = int(required_env('OCR_MIN_CROP_WIDTH'))
-    if min_crop_width < 1:
-        raise ValueError('OCR_MIN_CROP_WIDTH debe ser positivo')
-    model = required_env('OCR_MODEL')
+def ollama_endpoint(model):
     if model.lower().endswith(('-cloud', ':cloud')):
         raise ValueError('OCR_MODEL debe ser un modelo descargado para inferencia local')
     parsed = urllib.parse.urlsplit(required_env('OCR_OLLAMA_URL'))
@@ -56,8 +59,37 @@ def config_from_env():
             or parsed.port is None or parsed.username or parsed.password
             or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
         raise ValueError('OCR_OLLAMA_URL debe ser una dirección HTTP local con puerto')
-    endpoint = parsed.geturl().rstrip('/') + '/api/chat'
-    return OcrConfig(min_confidence, min_crop_width, model, endpoint)
+    return parsed.geturl().rstrip('/') + '/api/chat'
+
+
+def gemini_endpoint(model):
+    if not GEMINI_MODEL.fullmatch(model):
+        raise ValueError('OCR_MODEL no es un identificador de modelo válido')
+    parsed = urllib.parse.urlsplit(required_env('OCR_GEMINI_URL'))
+    if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+            or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
+        raise ValueError('OCR_GEMINI_URL debe ser una dirección HTTPS sin credenciales ni ruta')
+    return f"{parsed.geturl().rstrip('/')}/v1beta/models/{model}:generateContent"
+
+
+def config_from_env():
+    backend = required_env('OCR_BACKEND')
+    if backend not in BACKENDS:
+        raise ValueError('OCR_BACKEND debe ser ollama o gemini')
+    min_confidence = float(required_env('OCR_MIN_CONFIDENCE'))
+    if not 0 <= min_confidence <= 1:
+        raise ValueError('OCR_MIN_CONFIDENCE debe estar entre 0 y 1')
+    min_crop_width = int(required_env('OCR_MIN_CROP_WIDTH'))
+    if min_crop_width < 1:
+        raise ValueError('OCR_MIN_CROP_WIDTH debe ser positivo')
+    model = required_env('OCR_MODEL')
+    if backend == 'gemini':
+        endpoint = gemini_endpoint(model)
+        api_key = required_env('OCR_GEMINI_API_KEY')
+    else:
+        endpoint = ollama_endpoint(model)
+        api_key = ''
+    return OcrConfig(min_confidence, min_crop_width, model, endpoint, backend, api_key)
 
 
 def normalize(text):
@@ -81,7 +113,7 @@ def parse_answer(content):
     try:
         answer = json.loads(content)
     except json.JSONDecodeError as error:
-        raise ValueError('Ollama no devolvió JSON') from error
+        raise ValueError('El lector no devolvió JSON') from error
     if not isinstance(answer, dict) or not isinstance(answer.get('texto'), str):
         raise ValueError('La respuesta de lectura no trae el campo texto')
     return answer['texto']
@@ -98,29 +130,64 @@ def crop_plate(image, box):
     return image.crop(bounds)
 
 
-def make_asker(config):
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+def encode_crop(crop):
+    encoded = io.BytesIO()
+    fit_for_model(crop).save(encoded, format='PNG')
+    return base64.b64encode(encoded.getvalue()).decode('ascii')
+
+
+def ollama_request(config, image):
+    payload = {
+        'model': config.model, 'stream': False, 'format': ANSWER_SCHEMA,
+        'options': {'temperature': 0, 'num_ctx': 4096, 'num_predict': 60},
+        'messages': [{'role': 'user', 'content': PROMPT, 'images': [image]}],
+    }
+    return urllib.request.Request(
+        config.endpoint, json.dumps(payload).encode(), {'Content-Type': 'application/json'},
+    )
+
+
+def ollama_text(body):
+    return body['message']['content']
+
+
+def gemini_request(config, image):
+    payload = {
+        'contents': [{'parts': [
+            {'text': PROMPT},
+            {'inline_data': {'mime_type': 'image/png', 'data': image}},
+        ]}],
+        'generationConfig': {
+            'temperature': 0, 'maxOutputTokens': 60,
+            'responseMimeType': 'application/json', 'responseSchema': GEMINI_SCHEMA,
+        },
+    }
+    headers = {'Content-Type': 'application/json', 'x-goog-api-key': config.api_key}
+    return urllib.request.Request(config.endpoint, json.dumps(payload).encode(), headers)
+
+
+def gemini_text(body):
+    return body['candidates'][0]['content']['parts'][0]['text']
+
+
+READERS = {
+    'ollama': (ollama_request, ollama_text),
+    'gemini': (gemini_request, gemini_text),
+}
+
+
+def make_asker(config, opener=None):
+    opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    build_request, extract_text = READERS[config.backend]
 
     def ask(crop):
-        encoded = io.BytesIO()
-        fit_for_model(crop).save(encoded, format='PNG')
-        payload = {
-            'model': config.model, 'stream': False, 'format': ANSWER_SCHEMA,
-            'options': {'temperature': 0, 'num_ctx': 4096, 'num_predict': 60},
-            'messages': [{
-                'role': 'user', 'content': PROMPT,
-                'images': [base64.b64encode(encoded.getvalue()).decode('ascii')],
-            }],
-        }
-        request = urllib.request.Request(
-            config.endpoint, json.dumps(payload).encode(), {'Content-Type': 'application/json'},
-        )
+        request = build_request(config, encode_crop(crop))
         with opener.open(request, timeout=REQUEST_TIMEOUT) as response:
-            body = json.loads(response.read(65536))
+            body = json.loads(response.read(MAX_RESPONSE_BYTES))
         try:
-            return parse_answer(body['message']['content'])
-        except (KeyError, TypeError) as error:
-            raise ValueError('Ollama no devolvió una respuesta de lectura válida') from error
+            return parse_answer(extract_text(body))
+        except (KeyError, IndexError, TypeError) as error:
+            raise ValueError('El lector no devolvió una respuesta de lectura válida') from error
 
     return ask
 

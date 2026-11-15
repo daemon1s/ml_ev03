@@ -140,8 +140,125 @@ class ReadPlateTest(unittest.TestCase):
         self.assertEqual(result['estado'], 'no_disponible')
 
 
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, limit=-1):
+        return json.dumps(self.body).encode()
+
+
+class FakeOpener:
+    def __init__(self, body):
+        self.body = body
+        self.requests = []
+
+    def open(self, request, timeout=None):
+        self.requests.append((request, timeout))
+        return FakeResponse(self.body)
+
+
+def gemini_config(**changes):
+    values = {
+        'model': 'gemini-3.5-flash-lite',
+        'endpoint': 'https://api.example.test/v1beta/models/gemini-3.5-flash-lite:generateContent',
+        'backend': 'gemini',
+        'api_key': 'clave-de-prueba',
+    }
+    values.update(changes)
+    return config(**values)
+
+
+class AskerTest(unittest.TestCase):
+    def setUp(self):
+        self.crop = Image.new('RGB', (120, 40), 'white')
+
+    def test_gemini_sends_key_in_header_and_image_inline(self):
+        opener = FakeOpener({'candidates': [{'content': {'parts': [{'text': json.dumps({'texto': 'BCDF12'})}]}}]})
+        ask = plate_reader.make_asker(gemini_config(), opener)
+        self.assertEqual(ask(self.crop), 'BCDF12')
+        request, timeout = opener.requests[0]
+        self.assertEqual(request.full_url, gemini_config().endpoint)
+        self.assertEqual(request.get_header('X-goog-api-key'), 'clave-de-prueba')
+        self.assertNotIn('clave-de-prueba', request.full_url)
+        self.assertEqual(timeout, plate_reader.REQUEST_TIMEOUT)
+        sent = json.loads(request.data)
+        parts = sent['contents'][0]['parts']
+        self.assertEqual(parts[0]['text'], plate_reader.PROMPT)
+        self.assertEqual(parts[1]['inline_data']['mime_type'], 'image/png')
+        self.assertTrue(parts[1]['inline_data']['data'])
+        self.assertEqual(sent['generationConfig']['temperature'], 0)
+        self.assertEqual(sent['generationConfig']['responseMimeType'], 'application/json')
+
+    def test_gemini_response_without_candidates_is_invalid(self):
+        for body in ({}, {'candidates': []}, {'candidates': [{'finishReason': 'SAFETY'}]}):
+            ask = plate_reader.make_asker(gemini_config(), FakeOpener(body))
+            with self.assertRaises(ValueError):
+                ask(self.crop)
+
+    def test_ollama_keeps_its_payload(self):
+        opener = FakeOpener({'message': {'content': json.dumps({'texto': 'AB1234'})}})
+        ask = plate_reader.make_asker(config(), opener)
+        self.assertEqual(ask(self.crop), 'AB1234')
+        sent = json.loads(opener.requests[0][0].data)
+        self.assertEqual(sent['model'], 'qwen3-vl:4b-instruct')
+        self.assertEqual(len(sent['messages'][0]['images']), 1)
+        self.assertIsNone(opener.requests[0][0].get_header('X-goog-api-key'))
+
+    def test_config_repr_hides_the_key(self):
+        self.assertNotIn('clave-de-prueba', repr(gemini_config()))
+
+
+class GeminiConfigTest(unittest.TestCase):
+    ENV = {
+        'OCR_BACKEND': 'gemini',
+        'OCR_MIN_CONFIDENCE': '0.6',
+        'OCR_MIN_CROP_WIDTH': '40',
+        'OCR_MODEL': 'gemini-3.5-flash-lite',
+        'OCR_GEMINI_URL': 'https://generativelanguage.googleapis.com',
+        'OCR_GEMINI_API_KEY': 'clave-de-prueba',
+    }
+
+    def test_reads_gemini_values_without_needing_ollama(self):
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            loaded = config_from_env()
+        self.assertEqual(loaded.backend, 'gemini')
+        self.assertEqual(loaded.api_key, 'clave-de-prueba')
+        self.assertEqual(
+            loaded.endpoint,
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
+        )
+
+    def test_missing_variable_is_an_explicit_error(self):
+        for name in self.ENV:
+            env = {key: value for key, value in self.ENV.items() if key != name}
+            with mock.patch.dict(os.environ, env, clear=True):
+                with self.assertRaisesRegex(ValueError, name):
+                    config_from_env()
+
+    def test_rejects_insecure_or_unsafe_endpoint_and_model(self):
+        cases = (
+            ('OCR_GEMINI_URL', 'http://generativelanguage.googleapis.com'),
+            ('OCR_GEMINI_URL', 'https://user:pass@generativelanguage.googleapis.com'),
+            ('OCR_GEMINI_URL', 'https://generativelanguage.googleapis.com/otra?x=1'),
+            ('OCR_MODEL', '../models/otro'),
+            ('OCR_MODEL', 'gemini 3'),
+        )
+        for name, value in cases:
+            with mock.patch.dict(os.environ, {**self.ENV, name: value}, clear=True):
+                with self.assertRaises(ValueError, msg=f'{name}={value}'):
+                    config_from_env()
+
+
 class ConfigTest(unittest.TestCase):
     ENV = {
+        'OCR_BACKEND': 'ollama',
         'OCR_MIN_CONFIDENCE': '0.6',
         'OCR_MIN_CROP_WIDTH': '40',
         'OCR_MODEL': 'qwen3-vl:4b-instruct',
@@ -173,6 +290,17 @@ class ConfigTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {**self.ENV, 'OCR_MIN_CONFIDENCE': '1.5'}, clear=True):
             with self.assertRaises(ValueError):
                 config_from_env()
+
+    def test_rejects_unknown_backend(self):
+        with mock.patch.dict(os.environ, {**self.ENV, 'OCR_BACKEND': 'otro'}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'OCR_BACKEND'):
+                config_from_env()
+
+    def test_ollama_backend_is_default_in_config(self):
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            loaded = config_from_env()
+        self.assertEqual(loaded.backend, 'ollama')
+        self.assertEqual(loaded.api_key, '')
 
 
 if __name__ == '__main__':
