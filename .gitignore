@@ -15,4 +15,6 @@
 *.sqlite3-*
 __pycache__/
 .venv/
+.venv-torch/
 .ipynb_checkpoints/
+/auditoria.env.bat
