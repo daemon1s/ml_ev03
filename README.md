@@ -29,7 +29,7 @@ Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 im�
 | `web_demo.py` y `web/index.html` | Web local que une detección y lectura. |
 | `Dockerfile`, `docker-compose.yml`, `deploy/` | Despliegue en un servidor con nginx. |
 
-Los tests están en los archivos `test_*.py`.
+Los tests están en `tests/`.
 
 ## Modelo entrenado
 
@@ -91,5 +91,5 @@ Con Gemini, `OCR_BACKEND=gemini` y las variables que lista `.env.example`, inclu
 ## Tests
 
 ```powershell
-.\.venv-torch\Scripts\python.exe -m unittest discover -p "test_*.py"
+.\.venv-torch\Scripts\python.exe -m unittest discover -s tests -t .
 ```
