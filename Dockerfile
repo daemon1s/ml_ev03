@@ -16,7 +16,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-COPY web_demo.py demo.py evaluate.py plate_reader.py audit_review.py plotting.py ./
+COPY web_demo.py demo.py evaluate.py plate_reader.py plotting.py ./
 COPY web/index.html web/index.html
 
 USER app

@@ -18,3 +18,8 @@ __pycache__/
 .venv-torch/
 .ipynb_checkpoints/
 /auditoria.env.bat
+
+/HITOS.md
+/docs/handoffs/
+/imgs/
+/MATERIA E INSTRUCCIONESA/

@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import os
 import re
 import threading
 import time
@@ -8,8 +9,6 @@ import urllib.parse
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
-
-from audit_review import NoRedirect, required_env
 
 CROP_MARGIN = 0.1
 MAX_MODEL_SIDE = 768
@@ -44,6 +43,18 @@ ANSWER_SCHEMA = {
     'required': ['texto'],
     'additionalProperties': False,
 }
+
+
+def required_env(name):
+    value = os.environ.get(name, '').strip()
+    if not value:
+        raise ValueError(f'Falta configurar {name}')
+    return value
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise ValueError('El servidor de lectura intentó redirigir la solicitud')
 
 
 @dataclass(frozen=True)

@@ -1,68 +1,91 @@
 # EV03 · Detección de patentes
 
-Proyecto de Deep Learning para localizar patentes vehiculares. La auditoría de etiquetas ayuda a identificar imágenes de entrenamiento que conviene revisar antes de entrenar el detector.
+Detector de patentes vehiculares con YOLOv8 XS, entrenado con Keras 3, más una capa de lectura (OCR) separada que transcribe el texto del recorte. Se usa desde una web local.
 
-El repositorio documenta la [decisión de arquitectura y el origen del corpus](docs/decision-modelo-y-datos.md), junto con la [especificación de la auditoría y su interfaz](docs/especificacion-auditoria.md).
+- **Detección.** YOLOv8 XS (`keras-cv`) con aprendizaje por transferencia, entrenado sobre una clase, `Patente`. Ubica la patente; no lee texto.
+- **Lectura.** Una etapa aparte, elegida con `OCR_BACKEND`: Qwen3-VL 4B por Ollama (local) o Gemini (nube). No forma parte del modelo entrenado.
 
-## Entrega y defensa
+La decisión de arquitectura, el origen de los datos, el aumento de datos, las métricas y el despliegue están en [docs/decision-modelo-y-datos.md](docs/decision-modelo-y-datos.md).
 
-**Plazo de entrega: domingo 15 de noviembre de 2026 a las 23:00, hora de Santiago.** Fecha indicada por el equipo.
+## Resultados
 
-- Grabar un video expositivo que muestre el sistema funcionando y recorra el código que ejecuta la demostración.
-- Preparar a ambos integrantes para explicar las estructuras de datos, los `import`, el módulo o biblioteca de origen y qué funciones se invocan durante la carga de imágenes, el entrenamiento y la inferencia.
-- Entregar el código reproducible y el modelo entrenado en `.keras` o `.h5`, con la justificación del diseño y de los aumentos, curvas y métricas de evaluación. La auditoría de etiquetas puede avanzar en paralelo al detector.
+Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 imágenes de `test`:
 
-## Corpus local
+| AP@0,5 | AP@0,5:0,95 | Precisión | Recall | F1 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0,901 | 0,738 | 0,934 | 0,895 | 0,914 |
 
-Configura `DATASET_DIR` con la ruta a `entregable/dataset` de EV02 en tu equipo. La raíz contiene `data.yaml` y las carpetas `train`, `valid` y `test`, cada una con `images` y `labels`. Configura `AUDIT_WORK_DIR` con una carpeta local escribible fuera del corpus y de este repositorio.
+## Archivos
 
-### Auditoría visual de las cajas
+| Archivo | Para qué sirve |
+| --- | --- |
+| `merge_manual.py` | Incorpora 40 imágenes anotadas a mano a `train` (convierte COCO a YOLO). |
+| `augment.py` | Aumento de datos solo para `train`: escala, traslación, brillo, contraste, desenfoque y ruido; sin volteo. |
+| `pilot.py` | Carga de imágenes y etiquetas, lotes con aumento y piloto corto de comprobación. |
+| `train.py` | Entrenamiento completo con parada temprana; guarda `best.keras`, `history.csv` y las curvas. |
+| `evaluate.py` | Elige el umbral en `valid` y mide en `test`: AP, precisión, recall y F1. |
+| `demo.py` | Detección sobre una foto desde la línea de comandos. |
+| `plate_reader.py` | Capa de lectura con reglas de confianza, tamaño y formato de patente chilena. |
+| `web_demo.py` y `web/index.html` | Web local que une detección y lectura. |
+| `Dockerfile`, `docker-compose.yml`, `deploy/` | Despliegue en un servidor con nginx. |
 
-La aplicación de escritorio requiere Python con Tk y Pillow. Usa Ollama para evaluar los recortes en la misma máquina. Con Ollama instalado, descarga el modelo visual con `ollama pull qwen3-vl:4b-instruct`. Abre el auditor desde PowerShell, en la raíz del repositorio.
+Los tests están en los archivos `test_*.py`.
 
-```powershell
-$env:DATASET_DIR = '<ruta al corpus curado de EV02>'
-$env:AUDIT_WORK_DIR = '<carpeta local fuera del corpus y del repositorio>'
-$env:AUDIT_OLLAMA_URL = 'http://127.0.0.1:11434'
-$env:AUDIT_MODEL = 'qwen3-vl:4b-instruct'
-.\.venv\Scripts\python.exe audit_gui.py
-```
+## Preparar el entorno
 
-Para abrirla con doble clic, copia `auditoria.env.example.bat` como `auditoria.env.bat`, completa las rutas y ejecuta `iniciar_auditoria.bat`. El archivo `auditoria.env.bat` es local y Git lo ignora. Si falta una variable, el script lo indica y no abre la ventana.
-
-La pestaña **Historial** lista las cajas que el modelo ya auditó, con su veredicto, el motivo y la decisión humana si existe. Al seleccionar una fila, la ventana vuelve a la cola y abre esa caja.
-
-Para grabar el flujo, activa **Mostrar todas las cajas**, selecciona una caja de una imagen sintética o autorizada y pulsa **Auditar esta caja**. Con **Seguir auditoría** activado, la ventana muestra el recorte con borde naranja, el progreso y el resultado. El **Registro de auditoría** muestra cuándo se envió la caja al modelo y qué respondió. También guarda el historial en `auditoria.log`, dentro de `AUDIT_WORK_DIR`.
-
-Las cajas que el modelo aprueba salen de la cola normal. Las dudosas, mal delimitadas y las que parecen otro objeto quedan para revisión humana. Los veredictos automáticos no cambian las etiquetas.
-
-Antes de auditar todo `train`, compara el resultado del modelo con las decisiones de la dupla en una muestra con patentes claras y errores conocidos. **Auditar 50 cajas** ensaya el lote con las primeras cajas pendientes y **Auditar esta caja** permite elegir casos concretos. **Exportar copia de train** aplica las decisiones guardadas en una carpeta nueva. El archivo `resumen.json` indica cuántas cajas quedaron sin resolver.
-
-| Partición | Imágenes | Uso |
-| --- | ---: | --- |
-| Entrenamiento | 1.141 | Auditoría, aumento de datos y entrenamiento (1.101 de EV02 y 40 manuales) |
-| Validación | 289 | Seguimiento durante el entrenamiento |
-| Prueba | 139 | Evaluación final |
-
-El corpus curado de EV02 deriva de [My First Project v2 en Roboflow Universe](https://universe.roboflow.com/luiss-workspace-jfeoo/my-first-project-yzokm/dataset/2), bajo licencia CC BY 4.0 según el `data.yaml` local. La descarga de origen y el corpus curado son versiones distintas. Quien necesite repetir la corrida exacta requiere acceso a la copia curada por un canal acordado con la dupla.
-
-## Contenido previsto
-
-Incluir código o cuaderno de entrenamiento, configuración de ejemplo, dependencias, instrucciones reproducibles, métricas y curvas agregadas, y ejemplos sintéticos o anonimizados. Incluir el modelo final `.keras` o `.h5` cuando exista y se haya comprobado que puede cargarse. Las fotos, etiquetas, recortes, registros de revisión y evidencia de EV02 se almacenan fuera del checkout. Para una demostración sin acceso al corpus, usar una imagen sintética o anonimizada.
-
-## Piloto del detector
-
-Con Python 3.11, preparar un entorno virtual e instalar las dependencias indicadas. Definir `DATASET_DIR` y `PILOT_OUTPUT_DIR`; esta última debe apuntar a una carpeta nueva fuera del corpus, preferiblemente bajo `runs/` en el checkout. Ejecutar estos comandos desde la raíz del repositorio en PowerShell:
+Requiere Python 3.11. Las dependencias de entrenamiento y evaluación están en `requirements-pilot.txt`; el entrenamiento usa Keras 3 con motor PyTorch para aprovechar la GPU en Windows (`torch` y `torchvision` con CUDA, instalados aparte).
 
 ```powershell
-py -3.11 -m venv .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements-pilot.txt
-.venv/Scripts/python.exe pilot.py train
-.venv/Scripts/python.exe pilot.py verify
+python -m venv .venv-torch
+.\.venv-torch\Scripts\python.exe -m pip install -r requirements-pilot.txt
 ```
 
-El piloto usa 16 imágenes de entrenamiento y 4 de validación durante 2 épocas. Comprueba la carga de etiquetas, el ajuste, el guardado de `pilot.keras` y la inferencia desde un proceso nuevo. `prediccion-local.png` muestra cajas candidatas con un umbral de confianza de cero para probar el flujo. Se guarda localmente porque contiene una fotografía del corpus. La evaluación final se realiza aparte con la partición de prueba y umbrales definidos antes de medirla.
+## Corpus
 
-La corrida verificada del 14 de noviembre de 2026 dejó `runs/pilot-ev03-verificado/pilot.keras` y `runs/pilot-ev03-verificado/prediccion-local.png` en este equipo. La imagen contiene tres cajas candidatas. La ruta `runs/` está excluida de Git.
+El corpus no está en el repositorio. `DATASET_DIR` apunta a una carpeta con `train`, `valid` y `test`, cada una con `images` y `labels` en formato YOLO.
 
-Para el video y la defensa, seguir una imagen y su etiqueta a través de [pilot.py](pilot.py). `PIL.Image` abre y redimensiona la imagen. `numpy` agrupa las imágenes y las cajas en arreglos que consume el modelo. La función propia `box_xyxy` transforma centro y tamaño normalizados a esquinas en píxeles. `keras_cv.models` construye YOLOv8 y carga su extractor preentrenado. `keras` configura el optimizador y la parada temprana, y guarda y recarga el artefacto. `PIL.ImageDraw` dibuja las cajas que devuelve la inferencia.
+| Partición | Imágenes |
+| --- | ---: |
+| `train` | 1.141 |
+| `valid` | 289 |
+| `test` | 139 |
+
+El corpus deriva de [My First Project v2 en Roboflow Universe](https://universe.roboflow.com/luiss-workspace-jfeoo/my-first-project-yzokm/dataset/2), con licencia CC BY 4.0 según su `data.yaml`.
+
+## Entrenar y evaluar
+
+`TRAIN_OUTPUT_DIR` debe ser una carpeta nueva fuera del corpus.
+
+```powershell
+$env:KERAS_BACKEND = "torch"
+$env:DATASET_DIR = "C:\ruta\al\dataset"
+$env:TRAIN_OUTPUT_DIR = "$PWD\runs\mi-corrida"
+.\.venv-torch\Scripts\python.exe train.py
+.\.venv-torch\Scripts\python.exe evaluate.py
+```
+
+## Ejecutar la web local
+
+La lectura se elige con `OCR_BACKEND`. Con Ollama:
+
+```powershell
+ollama pull qwen3-vl:4b-instruct
+$env:KERAS_BACKEND = "torch"
+$env:TRAIN_OUTPUT_DIR = "$PWD\runs\mi-corrida"
+$env:DEMO_HOST = "127.0.0.1"
+$env:DEMO_PORT = "8765"
+$env:OCR_BACKEND = "ollama"
+$env:OCR_MODEL = "qwen3-vl:4b-instruct"
+$env:OCR_OLLAMA_URL = "http://127.0.0.1:11434"
+$env:OCR_MIN_CONFIDENCE = "0.60"
+$env:OCR_MIN_CROP_WIDTH = "80"
+.\.venv-torch\Scripts\python.exe web_demo.py
+```
+
+Con Gemini, `OCR_BACKEND=gemini` y las variables que lista `.env.example`, incluida la clave. Si falta una variable, el programa lo indica y no arranca. Abre `http://127.0.0.1:8765`.
+
+## Tests
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
+```
