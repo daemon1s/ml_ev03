@@ -149,6 +149,7 @@
   footer h3 { margin: 0 0 4px; font-size: .875rem; font-weight: 600; }
   footer p { margin: 0; color: var(--suave); font-size: .875rem; max-width: 52ch; }
   footer .diferencia { grid-column: 1 / -1; }
+  body.sin-lectura .solo-lectura { display: none; }
 
   @media (max-width: 860px) {
     main { padding: 28px 16px 56px; }
@@ -165,7 +166,7 @@
 <main>
   <div class="cabecera">
     <h1>Detector de patentes</h1>
-    <p class="lector" id="lector" aria-live="polite"></p>
+    <p class="lector solo-lectura" id="lector" aria-live="polite"></p>
   </div>
 
   <div id="entrada">
@@ -200,11 +201,11 @@
       <h3>Detección</h3>
       <p>YOLOv8 XS entrenado con Keras 3. Encuentra dónde está la patente en la foto.</p>
     </section>
-    <section>
+    <section class="solo-lectura">
       <h3>Lectura (OCR)</h3>
-      <p id="pie-ocr">La capa de lectura la hace Gemini sobre el recorte de la patente.</p>
+      <p id="pie-ocr">La capa de lectura transcribe los caracteres del recorte de la patente.</p>
     </section>
-    <section class="diferencia">
+    <section class="diferencia solo-lectura">
       <h3>La diferencia</h3>
       <p>Detectar es ubicar la patente; leer es transcribir sus caracteres. Son dos etapas separadas: el modelo entrenado solo detecta, y la lectura la hace otro modelo que no se entrenó aquí.</p>
     </section>
@@ -226,6 +227,7 @@
   const NOMBRES_LECTOR = {
     ollama: 'Ollama, en este equipo',
     gemini: 'Gemini, en la nube',
+    fast_plate: 'OCR de patentes, en este servidor',
   };
 
   const MOTIVOS = {
@@ -242,12 +244,12 @@
   }
 
   function mostrarLector(info) {
+    document.body.classList.toggle('sin-lectura', !info);
     lector.replaceChildren();
     lector.classList.toggle('activo', Boolean(info));
     lector.appendChild(crear('span', 'punto'));
     if (!info) {
       lector.appendChild(document.createTextNode('Lectura desactivada'));
-      pieOcr.textContent = 'Este servidor se inició sin la capa de lectura. Solo se muestra la detección.';
       return;
     }
     const nombre = NOMBRES_LECTOR[info.backend] || info.backend;
@@ -256,7 +258,9 @@
     lector.appendChild(document.createTextNode(` · ${nombre}`));
     pieOcr.textContent = info.backend === 'gemini'
       ? `La capa de lectura la hace Gemini (${info.modelo}) sobre el recorte de la patente.`
-      : `La capa de lectura la hace ${info.modelo} por ${nombre} sobre el recorte de la patente.`;
+      : info.backend === 'fast_plate'
+        ? `La capa de lectura la hace ${info.modelo}, un OCR especializado en patentes que corre en este servidor, sin servicios externos.`
+        : `La capa de lectura la hace ${info.modelo} por ${nombre} sobre el recorte de la patente.`;
   }
 
   function mostrar(clase, texto, extra) {
@@ -290,7 +294,7 @@
     cabecera.appendChild(crear('b', '', total > 1 ? `Patente ${indice + 1}` : 'Patente'));
     cabecera.appendChild(crear('span', 'num', `detección ${Math.round(deteccion.confianza * 100)} %`));
     bloque.appendChild(cabecera);
-    bloque.appendChild(bloqueLectura(deteccion.lectura, datos));
+    if (datos.lectura_activa) bloque.appendChild(bloqueLectura(deteccion.lectura, datos));
     return bloque;
   }
 
@@ -307,16 +311,19 @@
     datos.detecciones.forEach((d, i) => patentes.appendChild(patente(d, i, datos.detecciones.length, datos)));
     if (datos.detecciones.length === 0) {
       const vacio = crear('p', 'nota-lectura');
-      vacio.appendChild(crear('b', '', 'Sin patente que leer'));
+      vacio.appendChild(crear('b', '', 'Sin patente detectada'));
       vacio.appendChild(crear('span', '', 'El detector no encontró ninguna patente sobre su umbral.'));
       patentes.appendChild(vacio);
     }
-    medidas.replaceChildren(
+    const filas = [
       medida('Detección', `${datos.milisegundos} ms`),
-      medida('Lectura', datos.lectura_activa ? `${datos.milisegundos_lectura} ms` : 'desactivada'),
       medida('Umbral de detección', `${Math.round(datos.umbral * 100)} %`),
-      medida('Umbral de lectura', datos.lectura_activa ? `${Math.round(datos.umbral_lectura * 100)} %` : '—'),
-    );
+    ];
+    if (datos.lectura_activa) {
+      filas.splice(1, 0, medida('Lectura', `${datos.milisegundos_lectura} ms`));
+      filas.push(medida('Umbral de lectura', `${Math.round(datos.umbral_lectura * 100)} %`));
+    }
+    medidas.replaceChildren(...filas);
     mostrarLector(datos.lector);
     resultados.classList.remove('visible');
     void resultados.offsetWidth;

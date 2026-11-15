@@ -3,7 +3,7 @@
 Detector de patentes vehiculares con YOLOv8 XS, entrenado con Keras 3, más una capa de lectura (OCR) separada que transcribe el texto del recorte. Se usa desde una web local.
 
 - **Detección.** YOLOv8 XS (`keras-cv`) con aprendizaje por transferencia, entrenado sobre una clase, `Patente`. Ubica la patente; no lee texto.
-- **Lectura.** Una etapa aparte, elegida con `OCR_BACKEND`: Qwen3-VL 4B por Ollama (local) o Gemini (nube). No forma parte del modelo entrenado.
+- **Lectura.** Una etapa aparte, elegida con `OCR_BACKEND`: `fast_plate` (OCR especializado en patentes, local y en CPU), `ollama` (Qwen3-VL 4B, local) o `gemini` (nube). No forma parte del modelo entrenado.
 
 ## Resultados
 
@@ -25,6 +25,7 @@ Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 im�
 | `detector/demo.py` | Detección sobre una foto desde la línea de comandos. |
 | `detector/plate_reader.py` | Capa de lectura con reglas de confianza, tamaño y formato de patente chilena. |
 | `detector/web_demo.py` y `web/index.html` | Web local que une detección y lectura. |
+| `detector/audit_gui.py` y `detector/audit_review.py` | Ventana de auditoría visual de las cajas de `train` y su lógica de revisión. |
 | `Dockerfile`, `docker-compose.yml`, `deploy/` | Despliegue en un servidor con nginx. |
 
 El código está en el paquete `detector/` y se ejecuta con `python -m detector.<módulo>` desde la raíz. Los tests están en `tests/`.
@@ -68,7 +69,18 @@ $env:TRAIN_OUTPUT_DIR = "$PWD\runs\mi-corrida"
 
 ## Ejecutar la web local
 
-La lectura se elige con `OCR_BACKEND`. Con Ollama:
+La lectura se elige con `OCR_BACKEND`. Con `OCR_BACKEND=none` la web muestra solo la detección del modelo entrenado, y no hacen falta las demás variables `OCR_*`:
+
+```powershell
+$env:KERAS_BACKEND = "torch"
+$env:TRAIN_OUTPUT_DIR = "$PWD\runs\ev03-20261115"
+$env:DEMO_HOST = "127.0.0.1"
+$env:DEMO_PORT = "8765"
+$env:OCR_BACKEND = "none"
+.\.venv-torch\Scripts\python.exe -m detector.web_demo
+```
+
+Con Ollama:
 
 ```powershell
 ollama pull qwen3-vl:4b-instruct
@@ -84,7 +96,11 @@ $env:OCR_MIN_CROP_WIDTH = "80"
 .\.venv-torch\Scripts\python.exe -m detector.web_demo
 ```
 
-Con Gemini, `OCR_BACKEND=gemini` y las variables que lista `.env.example`, incluida la clave. Si falta una variable, el programa lo indica y no arranca. Abre `http://127.0.0.1:8765`.
+Con `OCR_BACKEND=fast_plate` no hace falta GPU ni servicio externo: `OCR_MODEL=global-plates-mobile-vit-v2-model` y `OCR_MODEL_DIR` con una carpeta donde guardar el modelo (4,76 MB, se descarga la primera vez si no está). Requiere `fast-plate-ocr`, `onnxruntime` y `opencv-python-headless`, como en `requirements-deploy.txt`. Con Gemini, `OCR_BACKEND=gemini` y sus variables (URL, clave y tope de lecturas). Si falta una variable, el programa lo indica y no arranca. Abre `http://127.0.0.1:8765`.
+
+## Auditoría visual de las cajas
+
+`detector/audit_gui.py` es una ventana de escritorio (tkinter) que revisa las cajas de `train` con `qwen3-vl:4b-instruct` por Ollama y deja la decisión final a una persona. Guarda cada veredicto en una base SQLite fuera del repositorio. Se configura copiando `auditoria.env.example.bat` como `auditoria.env.bat` (Git lo ignora) y se abre con doble clic en `iniciar_auditoria.bat`, que usa el entorno `.venv`.
 
 ## Tests
 

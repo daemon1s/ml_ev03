@@ -1,12 +1,14 @@
 import base64
 import io
+import os
 import unittest
+from unittest import mock
 
 import numpy as np
 from PIL import Image
 
 from detector.plate_reader import OcrConfig
-from detector.web_demo import process
+from detector.web_demo import process, reader_from_env
 
 
 class FakeDetector:
@@ -56,6 +58,24 @@ class WebDemoTest(unittest.TestCase):
         without_reader = process(FakeDetector(), 0.39, jpeg_bytes((640, 480)))
         self.assertEqual(with_reader['lector'], {'backend': 'gemini', 'modelo': 'modelo'})
         self.assertIsNone(without_reader['lector'])
+
+    def test_reader_from_env_is_none_when_reading_is_off(self):
+        with mock.patch.dict(os.environ, {'OCR_BACKEND': 'none'}, clear=True):
+            with mock.patch('detector.web_demo.make_asker') as make_asker:
+                self.assertIsNone(reader_from_env())
+        make_asker.assert_not_called()
+
+    def test_reader_from_env_pairs_config_with_its_asker(self):
+        env = {
+            'OCR_BACKEND': 'fast_plate', 'OCR_MIN_CONFIDENCE': '0.6', 'OCR_MIN_CROP_WIDTH': '40',
+            'OCR_MODEL': 'global-plates-mobile-vit-v2-model', 'OCR_MODEL_DIR': '/modelos/ocr',
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch('detector.web_demo.make_asker', return_value='ask') as make_asker:
+                config, ask = reader_from_env()
+        self.assertEqual(config.backend, 'fast_plate')
+        self.assertEqual(ask, 'ask')
+        make_asker.assert_called_once_with(config)
 
     def test_process_rejects_non_images(self):
         with self.assertRaises(ValueError):

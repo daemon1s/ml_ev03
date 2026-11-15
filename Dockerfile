@@ -12,6 +12,14 @@ WORKDIR /app
 COPY requirements-deploy.txt .
 RUN pip install -r requirements-deploy.txt
 
+ARG OCR_BACKEND
+ARG OCR_MODEL
+ARG OCR_MODEL_DIR
+RUN if [ "$OCR_BACKEND" = "fast_plate" ]; then \
+        test -n "$OCR_MODEL" && test -n "$OCR_MODEL_DIR" \
+        && python -c "import os; from pathlib import Path; from fast_plate_ocr.inference.hub import download_model; download_model(os.environ['OCR_MODEL'], save_directory=Path(os.environ['OCR_MODEL_DIR']))"; \
+    fi
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*

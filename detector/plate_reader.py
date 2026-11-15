@@ -19,8 +19,10 @@ FORMATS = (
     re.compile(r'[A-Z]{3}[0-9]{2}'),
 )
 LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1'}
-BACKENDS = ('ollama', 'gemini')
+BACKENDS = ('ollama', 'gemini', 'fast_plate')
+NO_READER = 'none'
 GEMINI_MODEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9.\-]*')
+FAST_PLATE_MODEL = re.compile(r'[a-z0-9][a-z0-9\-]*')
 GEMINI_SCHEMA = {
     'type': 'OBJECT',
     'properties': {'texto': {'type': 'STRING'}},
@@ -67,6 +69,7 @@ class OcrConfig:
     api_key: str = field(default='', repr=False)
     max_per_minute: int = 0
     max_per_day: int = 0
+    model_dir: str = ''
 
 
 class QuotaExceeded(Exception):
@@ -123,8 +126,10 @@ def gemini_endpoint(model):
 
 def config_from_env():
     backend = required_env('OCR_BACKEND')
+    if backend == NO_READER:
+        return None
     if backend not in BACKENDS:
-        raise ValueError('OCR_BACKEND debe ser ollama o gemini')
+        raise ValueError('OCR_BACKEND debe ser none, ollama, gemini o fast_plate')
     min_confidence = float(required_env('OCR_MIN_CONFIDENCE'))
     if not 0 <= min_confidence <= 1:
         raise ValueError('OCR_MIN_CONFIDENCE debe estar entre 0 y 1')
@@ -132,16 +137,24 @@ def config_from_env():
     if min_crop_width < 1:
         raise ValueError('OCR_MIN_CROP_WIDTH debe ser positivo')
     model = required_env('OCR_MODEL')
+    model_dir = ''
     if backend == 'gemini':
         endpoint = gemini_endpoint(model)
         api_key = required_env('OCR_GEMINI_API_KEY')
         per_minute = positive_int('OCR_MAX_PER_MINUTE')
         per_day = positive_int('OCR_MAX_PER_DAY')
+    elif backend == 'fast_plate':
+        if not FAST_PLATE_MODEL.fullmatch(model):
+            raise ValueError('OCR_MODEL no es un nombre de modelo válido')
+        model_dir = required_env('OCR_MODEL_DIR')
+        endpoint = ''
+        api_key = ''
+        per_minute = per_day = 0
     else:
         endpoint = ollama_endpoint(model)
         api_key = ''
         per_minute = per_day = 0
-    return OcrConfig(min_confidence, min_crop_width, model, endpoint, backend, api_key, per_minute, per_day)
+    return OcrConfig(min_confidence, min_crop_width, model, endpoint, backend, api_key, per_minute, per_day, model_dir)
 
 
 def normalize(text):
@@ -228,7 +241,31 @@ READERS = {
 }
 
 
-def make_asker(config, opener=None):
+def load_recognizer(config):
+    from pathlib import Path
+
+    from fast_plate_ocr import LicensePlateRecognizer
+    from fast_plate_ocr.inference.hub import download_model
+
+    model_path, plate_config_path = download_model(config.model, save_directory=Path(config.model_dir))
+    return LicensePlateRecognizer(onnx_model_path=model_path, plate_config_path=plate_config_path, device='cpu')
+
+
+def make_local_asker(config, recognizer):
+    import numpy as np
+
+    recognizer = recognizer or load_recognizer(config)
+
+    def ask(crop):
+        predictions = recognizer.run(np.asarray(crop.convert('L'), dtype='uint8'))
+        return predictions[0].plate if predictions else ''
+
+    return ask
+
+
+def make_asker(config, opener=None, recognizer=None):
+    if config.backend == 'fast_plate':
+        return make_local_asker(config, recognizer)
     opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     build_request, extract_text = READERS[config.backend]
     budget = ReadBudget(config.max_per_minute, config.max_per_day) if config.max_per_minute and config.max_per_day else None

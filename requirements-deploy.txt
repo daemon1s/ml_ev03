@@ -6,3 +6,6 @@ pillow==12.3.0
 tensorflow-metadata==1.15.0
 torch==2.6.0
 torchvision==0.21.0
+fast-plate-ocr==1.1.0
+onnxruntime==1.32.0
+opencv-python-headless==4.10.0.84

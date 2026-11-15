@@ -399,5 +399,161 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(loaded.api_key, '')
 
 
+def fast_plate_config(**changes):
+    values = {
+        'model': 'global-plates-mobile-vit-v2-model',
+        'endpoint': '',
+        'backend': 'fast_plate',
+        'model_dir': '/modelos/ocr',
+    }
+    values.update(changes)
+    return config(**values)
+
+
+class Prediction:
+    def __init__(self, plate):
+        self.plate = plate
+
+
+class FakeRecognizer:
+    def __init__(self, plates=('BCDF12',)):
+        self.plates = plates
+        self.calls = []
+
+    def run(self, source):
+        self.calls.append(source)
+        return [Prediction(plate) for plate in self.plates]
+
+
+class FastPlateConfigTest(unittest.TestCase):
+    ENV = {
+        'OCR_BACKEND': 'fast_plate',
+        'OCR_MIN_CONFIDENCE': '0.6',
+        'OCR_MIN_CROP_WIDTH': '40',
+        'OCR_MODEL': 'global-plates-mobile-vit-v2-model',
+        'OCR_MODEL_DIR': '/modelos/ocr',
+    }
+
+    def test_reads_values_without_needing_ollama_or_gemini(self):
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            loaded = config_from_env()
+        self.assertEqual(loaded.backend, 'fast_plate')
+        self.assertEqual(loaded.model, 'global-plates-mobile-vit-v2-model')
+        self.assertEqual(loaded.model_dir, '/modelos/ocr')
+        self.assertEqual(loaded.endpoint, '')
+        self.assertEqual(loaded.api_key, '')
+        self.assertEqual((loaded.max_per_minute, loaded.max_per_day), (0, 0))
+
+    def test_missing_variable_is_an_explicit_error(self):
+        for name in self.ENV:
+            env = {key: value for key, value in self.ENV.items() if key != name}
+            with mock.patch.dict(os.environ, env, clear=True):
+                with self.assertRaisesRegex(ValueError, name):
+                    config_from_env()
+
+    def test_rejects_unsafe_model_names(self):
+        for value in ('../modelo', 'modelo con espacio', 'a/b', '-inicio'):
+            with mock.patch.dict(os.environ, {**self.ENV, 'OCR_MODEL': value}, clear=True):
+                with self.assertRaisesRegex(ValueError, 'OCR_MODEL'):
+                    config_from_env()
+
+    def test_none_backend_disables_reading_without_other_variables(self):
+        with mock.patch.dict(os.environ, {'OCR_BACKEND': 'none'}, clear=True):
+            self.assertIsNone(config_from_env())
+
+    def test_none_backend_ignores_leftover_reader_variables(self):
+        with mock.patch.dict(os.environ, {**self.ENV, 'OCR_BACKEND': 'none'}, clear=True):
+            self.assertIsNone(config_from_env())
+
+    def test_missing_backend_is_still_an_explicit_error(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'OCR_BACKEND'):
+                config_from_env()
+
+    def test_other_backends_keep_an_empty_model_dir(self):
+        env = {
+            'OCR_BACKEND': 'ollama', 'OCR_MIN_CONFIDENCE': '0.6', 'OCR_MIN_CROP_WIDTH': '40',
+            'OCR_MODEL': 'qwen3-vl:4b-instruct', 'OCR_OLLAMA_URL': 'http://127.0.0.1:11434',
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(config_from_env().model_dir, '')
+
+
+class FastPlateAskerTest(unittest.TestCase):
+    def setUp(self):
+        self.crop = Image.new('RGB', (120, 40), (200, 120, 40))
+
+    def test_passes_a_grayscale_array_and_returns_the_plate_text(self):
+        recognizer = FakeRecognizer(('BCDF12',))
+        ask = plate_reader.make_asker(fast_plate_config(), recognizer=recognizer)
+        self.assertEqual(ask(self.crop), 'BCDF12')
+        sent = recognizer.calls[0]
+        self.assertEqual(sent.shape, (40, 120))
+        self.assertEqual(sent.dtype.name, 'uint8')
+
+    def test_no_prediction_gives_empty_text(self):
+        ask = plate_reader.make_asker(fast_plate_config(), recognizer=FakeRecognizer(()))
+        self.assertEqual(ask(self.crop), '')
+
+    def test_never_opens_the_network_nor_applies_a_budget(self):
+        class ForbiddenOpener:
+            def open(self, *args, **kwargs):
+                raise AssertionError('el lector local no debe usar la red')
+
+        ask = plate_reader.make_asker(fast_plate_config(), ForbiddenOpener(), FakeRecognizer())
+        for _ in range(30):
+            self.assertEqual(ask(self.crop), 'BCDF12')
+
+    def test_recognizer_is_loaded_once_from_the_config_when_not_injected(self):
+        recognizer = FakeRecognizer()
+        with mock.patch.object(plate_reader, 'load_recognizer', return_value=recognizer) as loader:
+            ask = plate_reader.make_asker(fast_plate_config())
+            ask(self.crop)
+            ask(self.crop)
+        loader.assert_called_once_with(fast_plate_config())
+        self.assertEqual(len(recognizer.calls), 2)
+
+    def test_read_plate_normalizes_and_validates_the_local_text(self):
+        ask = plate_reader.make_asker(fast_plate_config(), recognizer=FakeRecognizer(('bc-df 12',)))
+        result = read_plate(Image.new('RGB', (400, 300), 'white'), found(), fast_plate_config(), ask)
+        self.assertEqual(result, {'estado': 'leida', 'texto': 'BCDF12', 'motivo': None})
+        bad = plate_reader.make_asker(fast_plate_config(), recognizer=FakeRecognizer(('JSGXX22',)))
+        rejected = read_plate(Image.new('RGB', (400, 300), 'white'), found(), fast_plate_config(), bad)
+        self.assertEqual(rejected['estado'], 'ilegible')
+
+    def test_runtime_failure_reports_unavailable(self):
+        class Broken:
+            def run(self, source):
+                raise ValueError('modelo roto')
+
+        ask = plate_reader.make_asker(fast_plate_config(), recognizer=Broken())
+        result = read_plate(Image.new('RGB', (400, 300), 'white'), found(), fast_plate_config(), ask)
+        self.assertEqual(result['estado'], 'no_disponible')
+
+
+class LoadRecognizerTest(unittest.TestCase):
+    def test_uses_the_model_directory_and_runs_on_cpu(self):
+        created = {}
+
+        class FakeLibrary:
+            class LicensePlateRecognizer:
+                def __init__(self, **kwargs):
+                    created.update(kwargs)
+
+        def fake_download(model_name, save_directory=None, force_download=False):
+            created['downloaded'] = (model_name, save_directory)
+            return 'ruta/modelo.onnx', 'ruta/config.yaml'
+
+        hub = mock.Mock(download_model=fake_download)
+        modules = {'fast_plate_ocr': FakeLibrary, 'fast_plate_ocr.inference': mock.Mock(), 'fast_plate_ocr.inference.hub': hub}
+        with mock.patch.dict('sys.modules', modules):
+            plate_reader.load_recognizer(fast_plate_config())
+        self.assertEqual(created['downloaded'][0], 'global-plates-mobile-vit-v2-model')
+        self.assertEqual(str(created['downloaded'][1]).replace('\\', '/'), '/modelos/ocr')
+        self.assertEqual(created['onnx_model_path'], 'ruta/modelo.onnx')
+        self.assertEqual(created['plate_config_path'], 'ruta/config.yaml')
+        self.assertEqual(created['device'], 'cpu')
+
+
 if __name__ == '__main__':
     unittest.main()

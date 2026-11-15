@@ -1,6 +1,11 @@
 services:
   detector:
-    build: .
+    build:
+      context: .
+      args:
+        OCR_BACKEND: ${OCR_BACKEND:?falta OCR_BACKEND en .env}
+        OCR_MODEL: ${OCR_MODEL:?falta OCR_MODEL en .env}
+        OCR_MODEL_DIR: ${OCR_MODEL_DIR:-}
     image: detector-patentes:local
     container_name: detector-patentes
     restart: unless-stopped

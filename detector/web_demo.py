@@ -24,6 +24,13 @@ def describe_reader(reader):
     return {'backend': reader[0].backend, 'modelo': reader[0].model}
 
 
+def reader_from_env():
+    config = config_from_env()
+    if config is None:
+        return None
+    return config, make_asker(config)
+
+
 def process(detector, threshold, data, reader=None):
     try:
         with Image.open(io.BytesIO(data)) as opened:
@@ -113,16 +120,15 @@ def main():
     detector = load_detector(run / 'best.keras')
     page = PAGE_PATH.read_bytes()
     try:
-        config = config_from_env()
+        reader = reader_from_env()
     except ValueError as error:
         parser.error(str(error))
-    reader = (config, make_asker(config))
     server = HTTPServer((host, port), make_handler(detector, threshold, page, reader))
-    print(
-        f'Detector listo en http://{host}:{port} · umbral {threshold:.2f} · '
-        f'lectura con {config.model} desde {config.min_confidence:.2f}',
-        flush=True,
+    reading = (
+        f'lectura con {reader[0].model} desde {reader[0].min_confidence:.2f}'
+        if reader else 'sin lectura de patente'
     )
+    print(f'Detector listo en http://{host}:{port} · umbral {threshold:.2f} · {reading}', flush=True)
     server.serve_forever()
 
 
