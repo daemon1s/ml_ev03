@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 from PIL import Image
 
+from plate_reader import OcrConfig
 from web_demo import process
 
 
@@ -36,6 +37,18 @@ class WebDemoTest(unittest.TestCase):
         result = process(FakeDetector(), 0.39, jpeg_bytes((2560, 1280)))
         decoded = base64.b64decode(result['imagen'].split(',', 1)[1])
         self.assertEqual(Image.open(io.BytesIO(decoded)).size, (1280, 640))
+
+    def test_process_without_reader_marks_reading_as_disabled(self):
+        result = process(FakeDetector(), 0.39, jpeg_bytes((640, 480)))
+        self.assertEqual(result['detecciones'][0]['lectura']['estado'], 'desactivada')
+        self.assertFalse(result['lectura_activa'])
+
+    def test_process_attaches_reading_to_each_detection(self):
+        config = OcrConfig(0.6, 10, 'modelo', 'http://127.0.0.1:1/api/chat')
+        result = process(FakeDetector(), 0.39, jpeg_bytes((640, 480)), (config, lambda crop: 'BCDF12'))
+        reading = result['detecciones'][0]['lectura']
+        self.assertEqual(reading, {'estado': 'leida', 'texto': 'BCDF12', 'motivo': None})
+        self.assertTrue(result['lectura_activa'])
 
     def test_process_rejects_non_images(self):
         with self.assertRaises(ValueError):

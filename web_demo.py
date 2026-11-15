@@ -11,13 +11,14 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from demo import detect, draw, load_detector, read_threshold
+from plate_reader import config_from_env, make_asker, outcome, read_plate
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 DISPLAY_SIDE = 1280
 PAGE_PATH = Path(__file__).parent / 'web' / 'index.html'
 
 
-def process(detector, threshold, data):
+def process(detector, threshold, data, reader=None):
     try:
         with Image.open(io.BytesIO(data)) as opened:
             image = ImageOps.exif_transpose(opened).convert('RGB')
@@ -27,6 +28,10 @@ def process(detector, threshold, data):
     found = detect(detector, image, threshold)
     elapsed = time.perf_counter() - started
     shown = draw(image, found)
+    reading_started = time.perf_counter()
+    for item in found:
+        item['lectura'] = read_plate(image, item, *reader) if reader else outcome('desactivada')
+    reading_elapsed = time.perf_counter() - reading_started
     shown.thumbnail((DISPLAY_SIDE, DISPLAY_SIDE))
     buffer = io.BytesIO()
     shown.save(buffer, format='JPEG', quality=90)
@@ -34,11 +39,14 @@ def process(detector, threshold, data):
         'umbral': threshold,
         'detecciones': found,
         'milisegundos': round(elapsed * 1000),
+        'milisegundos_lectura': round(reading_elapsed * 1000),
+        'lectura_activa': reader is not None,
+        'umbral_lectura': reader[0].min_confidence if reader else None,
         'imagen': 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii'),
     }
 
 
-def make_handler(detector, threshold, page):
+def make_handler(detector, threshold, page, reader=None):
     lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
@@ -73,7 +81,7 @@ def make_handler(detector, threshold, page):
             data = self.rfile.read(length)
             try:
                 with lock:
-                    result = process(detector, threshold, data)
+                    result = process(detector, threshold, data, reader)
             except ValueError as error:
                 self.reply_json(400, {'error': str(error)})
                 return
@@ -94,8 +102,17 @@ def main():
     threshold = read_threshold(run)
     detector = load_detector(run / 'best.keras')
     page = PAGE_PATH.read_bytes()
-    server = HTTPServer((host, port), make_handler(detector, threshold, page))
-    print(f'Detector listo en http://{host}:{port} · umbral {threshold:.2f}', flush=True)
+    try:
+        config = config_from_env()
+    except ValueError as error:
+        parser.error(str(error))
+    reader = (config, make_asker(config))
+    server = HTTPServer((host, port), make_handler(detector, threshold, page, reader))
+    print(
+        f'Detector listo en http://{host}:{port} · umbral {threshold:.2f} · '
+        f'lectura con {config.model} desde {config.min_confidence:.2f}',
+        flush=True,
+    )
     server.serve_forever()
 
 
