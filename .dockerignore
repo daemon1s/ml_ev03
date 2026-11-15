@@ -2,4 +2,5 @@
 !requirements-deploy.txt
 !detector/
 !web/index.html
+detector/audit_*.py
 **/__pycache__
