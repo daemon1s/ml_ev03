@@ -2,7 +2,7 @@
 
 Proyecto de Deep Learning para localizar patentes vehiculares. La auditoría de etiquetas ayuda a identificar imágenes de entrenamiento que conviene revisar antes de entrenar el detector.
 
-El repositorio comienza con la [especificación de la auditoría y su interfaz](docs/especificacion-auditoria.md). La aplicación, el entrenamiento y los resultados están pendientes.
+El repositorio documenta la [decisión de arquitectura y el origen del corpus](docs/decision-modelo-y-datos.md), junto con la [especificación de la auditoría y su interfaz](docs/especificacion-auditoria.md). La aplicación, el entrenamiento y los resultados están pendientes.
 
 ## Corpus local
 
