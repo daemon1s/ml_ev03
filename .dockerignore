@@ -1,0 +1,9 @@
+*
+!requirements-deploy.txt
+!web_demo.py
+!demo.py
+!evaluate.py
+!plate_reader.py
+!audit_review.py
+!plotting.py
+!web/index.html

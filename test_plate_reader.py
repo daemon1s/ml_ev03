@@ -215,6 +215,88 @@ class AskerTest(unittest.TestCase):
         self.assertNotIn('clave-de-prueba', repr(gemini_config()))
 
 
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class ReadBudgetTest(unittest.TestCase):
+    def setUp(self):
+        self.clock = Clock()
+
+    def budget(self, per_minute=2, per_day=3):
+        return plate_reader.ReadBudget(per_minute, per_day, self.clock)
+
+    def test_allows_up_to_the_per_minute_limit_then_refuses(self):
+        budget = self.budget()
+        self.assertTrue(budget.take())
+        self.assertTrue(budget.take())
+        self.assertFalse(budget.take())
+
+    def test_per_minute_window_reopens_after_sixty_seconds(self):
+        budget = self.budget()
+        budget.take()
+        budget.take()
+        self.clock.now += 60.0
+        self.assertTrue(budget.take())
+
+    def test_daily_limit_holds_even_when_minute_window_reopens(self):
+        budget = self.budget()
+        for _ in range(2):
+            self.assertTrue(budget.take())
+        self.clock.now += 61.0
+        self.assertTrue(budget.take())
+        self.clock.now += 61.0
+        self.assertFalse(budget.take())
+
+    def test_daily_window_reopens_after_a_day(self):
+        budget = self.budget(per_minute=5, per_day=2)
+        budget.take()
+        budget.take()
+        self.assertFalse(budget.take())
+        self.clock.now += 86400.0
+        self.assertTrue(budget.take())
+
+    def test_refused_attempts_do_not_consume_budget(self):
+        budget = self.budget(per_minute=1, per_day=2)
+        budget.take()
+        for _ in range(10):
+            self.assertFalse(budget.take())
+        self.clock.now += 61.0
+        self.assertTrue(budget.take())
+
+
+class BudgetedAskerTest(unittest.TestCase):
+    def setUp(self):
+        self.crop = Image.new('RGB', (120, 40), 'white')
+        self.body = {'candidates': [{'content': {'parts': [{'text': json.dumps({'texto': 'BCDF12'})}]}}]}
+
+    def test_exhausted_budget_blocks_the_request_before_sending_it(self):
+        opener = FakeOpener(self.body)
+        ask = plate_reader.make_asker(gemini_config(max_per_minute=1, max_per_day=5), opener)
+        self.assertEqual(ask(self.crop), 'BCDF12')
+        with self.assertRaises(plate_reader.QuotaExceeded):
+            ask(self.crop)
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_read_plate_reports_exhausted_quota_as_skipped(self):
+        def exhausted(crop):
+            raise plate_reader.QuotaExceeded('sin cupo')
+
+        result = read_plate(Image.new('RGB', (400, 300)), found(), config(), exhausted)
+        self.assertEqual(result, {'estado': 'omitida', 'texto': None, 'motivo': 'cupo_agotado'})
+
+    def test_ollama_has_no_budget(self):
+        opener = FakeOpener({'message': {'content': json.dumps({'texto': 'AB1234'})}})
+        ask = plate_reader.make_asker(config(), opener)
+        for _ in range(30):
+            ask(self.crop)
+        self.assertEqual(len(opener.requests), 30)
+
+
 class GeminiConfigTest(unittest.TestCase):
     ENV = {
         'OCR_BACKEND': 'gemini',
@@ -223,7 +305,21 @@ class GeminiConfigTest(unittest.TestCase):
         'OCR_MODEL': 'gemini-3.5-flash-lite',
         'OCR_GEMINI_URL': 'https://generativelanguage.googleapis.com',
         'OCR_GEMINI_API_KEY': 'clave-de-prueba',
+        'OCR_MAX_PER_MINUTE': '10',
+        'OCR_MAX_PER_DAY': '400',
     }
+
+    def test_reads_budget_values(self):
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            loaded = config_from_env()
+        self.assertEqual((loaded.max_per_minute, loaded.max_per_day), (10, 400))
+
+    def test_rejects_non_positive_budget(self):
+        for name in ('OCR_MAX_PER_MINUTE', 'OCR_MAX_PER_DAY'):
+            for value in ('0', '-3'):
+                with mock.patch.dict(os.environ, {**self.ENV, name: value}, clear=True):
+                    with self.assertRaisesRegex(ValueError, name):
+                        config_from_env()
 
     def test_reads_gemini_values_without_needing_ollama(self):
         with mock.patch.dict(os.environ, self.ENV, clear=True):

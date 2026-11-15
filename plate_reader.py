@@ -2,8 +2,11 @@ import base64
 import io
 import json
 import re
+import threading
+import time
 import urllib.parse
 import urllib.request
+from collections import deque
 from dataclasses import dataclass, field
 
 from audit_review import NoRedirect, required_env
@@ -25,6 +28,8 @@ GEMINI_SCHEMA = {
     'required': ['texto'],
 }
 MAX_RESPONSE_BYTES = 65536
+MINUTE_SECONDS = 60.0
+DAY_SECONDS = 86400.0
 REQUEST_TIMEOUT = 90
 PROMPT = (
     'La imagen es el recorte de una patente vehicular chilena. '
@@ -49,6 +54,39 @@ class OcrConfig:
     endpoint: str
     backend: str = 'ollama'
     api_key: str = field(default='', repr=False)
+    max_per_minute: int = 0
+    max_per_day: int = 0
+
+
+class QuotaExceeded(Exception):
+    pass
+
+
+class ReadBudget:
+    def __init__(self, per_minute, per_day, clock=time.time):
+        self.per_minute = per_minute
+        self.per_day = per_day
+        self.clock = clock
+        self.taken = deque()
+        self.lock = threading.Lock()
+
+    def take(self):
+        with self.lock:
+            now = self.clock()
+            while self.taken and now - self.taken[0] >= DAY_SECONDS:
+                self.taken.popleft()
+            recent = sum(1 for moment in self.taken if now - moment < MINUTE_SECONDS)
+            if recent >= self.per_minute or len(self.taken) >= self.per_day:
+                return False
+            self.taken.append(now)
+            return True
+
+
+def positive_int(name):
+    value = int(required_env(name))
+    if value < 1:
+        raise ValueError(f'{name} debe ser positivo')
+    return value
 
 
 def ollama_endpoint(model):
@@ -86,10 +124,13 @@ def config_from_env():
     if backend == 'gemini':
         endpoint = gemini_endpoint(model)
         api_key = required_env('OCR_GEMINI_API_KEY')
+        per_minute = positive_int('OCR_MAX_PER_MINUTE')
+        per_day = positive_int('OCR_MAX_PER_DAY')
     else:
         endpoint = ollama_endpoint(model)
         api_key = ''
-    return OcrConfig(min_confidence, min_crop_width, model, endpoint, backend, api_key)
+        per_minute = per_day = 0
+    return OcrConfig(min_confidence, min_crop_width, model, endpoint, backend, api_key, per_minute, per_day)
 
 
 def normalize(text):
@@ -179,8 +220,11 @@ READERS = {
 def make_asker(config, opener=None):
     opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     build_request, extract_text = READERS[config.backend]
+    budget = ReadBudget(config.max_per_minute, config.max_per_day) if config.max_per_minute and config.max_per_day else None
 
     def ask(crop):
+        if budget and not budget.take():
+            raise QuotaExceeded('Se agotó el cupo de lecturas')
         request = build_request(config, encode_crop(crop))
         with opener.open(request, timeout=REQUEST_TIMEOUT) as response:
             body = json.loads(response.read(MAX_RESPONSE_BYTES))
@@ -204,6 +248,8 @@ def read_plate(image, item, config, ask):
         return outcome('omitida', reason='recorte_pequeno')
     try:
         raw = ask(crop_plate(image, item['caja']))
+    except QuotaExceeded:
+        return outcome('omitida', reason='cupo_agotado')
     except (OSError, ValueError):
         return outcome('no_disponible')
     plate = normalize(raw)

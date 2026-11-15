@@ -193,6 +193,7 @@
   const MOTIVOS = {
     confianza_baja: (datos) => `La confianza de detección no alcanza el mínimo de lectura (${Math.round(datos.umbral_lectura * 100)} %).`,
     recorte_pequeno: () => 'La patente ocupa muy pocos píxeles para leerla de forma fiable.',
+    cupo_agotado: () => 'Se agotó el cupo de lecturas de este servidor. La detección sigue funcionando; la lectura vuelve a estar disponible en unos minutos.',
   };
 
   function crear(etiqueta, clase, texto) {
@@ -217,7 +218,7 @@
     const textos = {
       ilegible: ['Patente detectada, texto ilegible', 'La lectura no calzó con un formato de patente chilena, así que no se muestra.'],
       omitida: ['Lectura omitida', (MOTIVOS[lectura.motivo] || (() => 'No se cumplió una condición de lectura.'))(datos)],
-      no_disponible: ['Lectura no disponible', 'No respondió el modelo de lectura. Revisa que Ollama esté activo.'],
+      no_disponible: ['Lectura no disponible', 'No respondió el servicio de lectura. La detección sigue siendo válida.'],
       desactivada: ['Lectura desactivada', 'Este servidor se inició sin la etapa de lectura.'],
     };
     const [titulo, cuerpo] = textos[lectura.estado] || ['Sin lectura', ''];
