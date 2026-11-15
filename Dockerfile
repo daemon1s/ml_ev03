@@ -16,7 +16,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-COPY web_demo.py demo.py evaluate.py plate_reader.py plotting.py ./
+COPY detector/ detector/
 COPY web/index.html web/index.html
 
 USER app
@@ -24,4 +24,4 @@ USER app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['DEMO_PORT'] + '/', timeout=5)"]
 
-CMD ["python", "web_demo.py"]
+CMD ["python", "-m", "detector.web_demo"]

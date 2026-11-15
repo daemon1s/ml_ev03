@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from evaluate import DECODER_CONFIDENCE, DECODER_DETECTIONS, detections
+from .evaluate import DECODER_CONFIDENCE, DECODER_DETECTIONS, detections
 
 MODEL_SIZE = 320
 NMS_IOU = 0.5
@@ -59,7 +59,7 @@ def detect(detector, image, threshold):
 def draw(image, found):
     from PIL import ImageDraw
 
-    from plotting import label_font
+    from .plotting import label_font
 
     canvas = image.convert('RGB')
     pen = ImageDraw.Draw(canvas)

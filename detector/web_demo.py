@@ -10,12 +10,12 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from demo import detect, draw, load_detector, read_threshold
-from plate_reader import config_from_env, make_asker, outcome, read_plate
+from .demo import detect, draw, load_detector, read_threshold
+from .plate_reader import config_from_env, make_asker, outcome, read_plate
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 DISPLAY_SIDE = 1280
-PAGE_PATH = Path(__file__).parent / 'web' / 'index.html'
+PAGE_PATH = Path(__file__).resolve().parent.parent / 'web' / 'index.html'
 
 
 def describe_reader(reader):

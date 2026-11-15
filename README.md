@@ -17,17 +17,17 @@ Umbral de confianza 0,39, elegido en validación y medido una vez en las 139 im�
 
 | Archivo | Para qué sirve |
 | --- | --- |
-| `merge_manual.py` | Incorpora 40 imágenes anotadas a mano a `train` (convierte COCO a YOLO). |
-| `augment.py` | Aumento de datos solo para `train`: escala, traslación, brillo, contraste, desenfoque y ruido; sin volteo. |
-| `pilot.py` | Carga de imágenes y etiquetas, lotes con aumento y piloto corto de comprobación. |
-| `train.py` | Entrenamiento completo con parada temprana; guarda `best.keras`, `history.csv` y las curvas. |
-| `evaluate.py` | Elige el umbral en `valid` y mide en `test`: AP, precisión, recall y F1. |
-| `demo.py` | Detección sobre una foto desde la línea de comandos. |
-| `plate_reader.py` | Capa de lectura con reglas de confianza, tamaño y formato de patente chilena. |
-| `web_demo.py` y `web/index.html` | Web local que une detección y lectura. |
+| `detector/merge_manual.py` | Incorpora 40 imágenes anotadas a mano a `train` (convierte COCO a YOLO). |
+| `detector/augment.py` | Aumento de datos solo para `train`: escala, traslación, brillo, contraste, desenfoque y ruido; sin volteo. |
+| `detector/pilot.py` | Carga de imágenes y etiquetas, lotes con aumento y piloto corto de comprobación. |
+| `detector/train.py` | Entrenamiento completo con parada temprana; guarda `best.keras`, `history.csv` y las curvas. |
+| `detector/evaluate.py` | Elige el umbral en `valid` y mide en `test`: AP, precisión, recall y F1. |
+| `detector/demo.py` | Detección sobre una foto desde la línea de comandos. |
+| `detector/plate_reader.py` | Capa de lectura con reglas de confianza, tamaño y formato de patente chilena. |
+| `detector/web_demo.py` y `web/index.html` | Web local que une detección y lectura. |
 | `Dockerfile`, `docker-compose.yml`, `deploy/` | Despliegue en un servidor con nginx. |
 
-Los tests están en `tests/`.
+El código está en el paquete `detector/` y se ejecuta con `python -m detector.<módulo>` desde la raíz. Los tests están en `tests/`.
 
 ## Modelo entrenado
 
@@ -62,8 +62,8 @@ El corpus deriva de [My First Project v2 en Roboflow Universe](https://universe.
 $env:KERAS_BACKEND = "torch"
 $env:DATASET_DIR = "C:\ruta\al\dataset"
 $env:TRAIN_OUTPUT_DIR = "$PWD\runs\mi-corrida"
-.\.venv-torch\Scripts\python.exe train.py
-.\.venv-torch\Scripts\python.exe evaluate.py
+.\.venv-torch\Scripts\python.exe -m detector.train
+.\.venv-torch\Scripts\python.exe -m detector.evaluate
 ```
 
 ## Ejecutar la web local
@@ -81,7 +81,7 @@ $env:OCR_MODEL = "qwen3-vl:4b-instruct"
 $env:OCR_OLLAMA_URL = "http://127.0.0.1:11434"
 $env:OCR_MIN_CONFIDENCE = "0.60"
 $env:OCR_MIN_CROP_WIDTH = "80"
-.\.venv-torch\Scripts\python.exe web_demo.py
+.\.venv-torch\Scripts\python.exe -m detector.web_demo
 ```
 
 Con Gemini, `OCR_BACKEND=gemini` y las variables que lista `.env.example`, incluida la clave. Si falta una variable, el programa lo indica y no arranca. Abre `http://127.0.0.1:8765`.

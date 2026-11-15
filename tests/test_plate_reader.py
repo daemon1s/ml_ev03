@@ -5,8 +5,8 @@ from unittest import mock
 
 from PIL import Image
 
-import plate_reader
-from plate_reader import (
+from detector import plate_reader
+from detector.plate_reader import (
     OcrConfig,
     config_from_env,
     crop_plate,

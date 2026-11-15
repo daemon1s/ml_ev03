@@ -120,7 +120,7 @@ def mean_average_precision(detected, truths):
 def plot_pr_curve(detected, truths, operating, path):
     from PIL import Image, ImageDraw
 
-    from plotting import label_font
+    from .plotting import label_font
 
     face = label_font()
     width, height, margin = 700, 520, 70
@@ -152,7 +152,7 @@ def plot_pr_curve(detected, truths, operating, path):
 def draw_examples(images, truths, detected, threshold, path, columns=4):
     from PIL import Image, ImageDraw
 
-    from plotting import label_font
+    from .plotting import label_font
 
     face = label_font(14)
     size = images.shape[1]
@@ -200,7 +200,7 @@ def main():
 
     import keras
 
-    from pilot import sample
+    from .pilot import sample
 
     keras.utils.set_random_seed(args.seed)
     size = 320

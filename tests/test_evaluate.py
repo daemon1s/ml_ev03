@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from evaluate import (
+from detector.evaluate import (
     average_precision, best_threshold, collect, detections, iou_matrix, match_image,
     mean_average_precision, precision_recall,
 )

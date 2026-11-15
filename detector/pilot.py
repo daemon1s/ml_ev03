@@ -52,7 +52,7 @@ def targets(boxes, maximum):
 
 def augmented_batches(keras, images, boxes, maximum, batch_size, seed):
     import numpy as np
-    from augment import augment
+    from .augment import augment
 
     class AugmentedBatches(keras.utils.PyDataset):
         def __init__(self):

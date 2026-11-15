@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from train import merge_histories, plot_curves, write_history
+from detector.train import merge_histories, plot_curves, write_history
 
 
 class TrainHelpersTest(unittest.TestCase):

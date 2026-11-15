@@ -1,8 +1,5 @@
 *
 !requirements-deploy.txt
-!web_demo.py
-!demo.py
-!evaluate.py
-!plate_reader.py
-!plotting.py
+!detector/
 !web/index.html
+**/__pycache__

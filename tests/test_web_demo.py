@@ -5,8 +5,8 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from plate_reader import OcrConfig
-from web_demo import process
+from detector.plate_reader import OcrConfig
+from detector.web_demo import process
 
 
 class FakeDetector:

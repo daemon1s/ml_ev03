@@ -13,7 +13,7 @@ def gradient_image():
 
 class AffineTest(unittest.TestCase):
     def test_identity_keeps_image_and_boxes(self):
-        from augment import affine
+        from detector.augment import affine
 
         image = gradient_image()
         boxes = [(80.0, 120.0, 240.0, 200.0)]
@@ -23,7 +23,7 @@ class AffineTest(unittest.TestCase):
         np.testing.assert_allclose(moved_boxes, boxes, atol=1e-3)
 
     def test_shift_moves_boxes_and_pixels_together(self):
-        from augment import affine
+        from detector.augment import affine
 
         image = gradient_image()
         boxes = [(80.0, 120.0, 160.0, 200.0)]
@@ -33,7 +33,7 @@ class AffineTest(unittest.TestCase):
         np.testing.assert_allclose(moved_image[100, 120 + 20], image[100, 120], atol=1.5)
 
     def test_scale_grows_boxes_around_the_center(self):
-        from augment import affine
+        from detector.augment import affine
 
         boxes = [(120.0, 120.0, 200.0, 200.0)]
         _, moved_boxes = affine(gradient_image(), boxes, 2.0, 0.0, 0.0)
@@ -41,7 +41,7 @@ class AffineTest(unittest.TestCase):
         np.testing.assert_allclose(moved_boxes, [(80.0, 80.0, 240.0, 240.0)], atol=1e-3)
 
     def test_box_that_leaves_the_frame_is_dropped(self):
-        from augment import affine
+        from detector.augment import affine
 
         boxes = [(10.0, 100.0, 60.0, 140.0), (200.0, 100.0, 250.0, 140.0)]
         _, moved_boxes = affine(gradient_image(), boxes, 1.0, -SIZE / 2, 0.0)
@@ -50,7 +50,7 @@ class AffineTest(unittest.TestCase):
         np.testing.assert_allclose(moved_boxes[0], (40.0, 100.0, 90.0, 140.0), atol=1e-3)
 
     def test_mostly_cropped_box_is_dropped(self):
-        from augment import affine
+        from detector.augment import affine
 
         boxes = [(10.0, 100.0, 110.0, 140.0)]
         _, moved_boxes = affine(gradient_image(), boxes, 1.0, -80.0, 0.0)
@@ -60,7 +60,7 @@ class AffineTest(unittest.TestCase):
 
 class AugmentTest(unittest.TestCase):
     def test_same_seed_gives_same_result(self):
-        from augment import augment
+        from detector.augment import augment
 
         image = gradient_image()
         boxes = [(80.0, 120.0, 240.0, 200.0)]
@@ -71,7 +71,7 @@ class AugmentTest(unittest.TestCase):
         self.assertEqual(first[1], second[1])
 
     def test_output_keeps_shape_range_and_valid_boxes(self):
-        from augment import augment
+        from detector.augment import augment
 
         rng = np.random.default_rng(0)
         image = gradient_image()
@@ -87,7 +87,7 @@ class AugmentTest(unittest.TestCase):
                 self.assertTrue(0 <= top < bottom <= SIZE)
 
     def test_never_mirrors_the_image(self):
-        from augment import augment
+        from detector.augment import augment
 
         rng = np.random.default_rng(1)
         image = gradient_image()
@@ -98,7 +98,7 @@ class AugmentTest(unittest.TestCase):
             self.assertGreater(row[-40:].mean(), row[:40].mean())
 
     def test_inputs_are_not_modified(self):
-        from augment import augment
+        from detector.augment import augment
 
         image = gradient_image()
         copy = image.copy()

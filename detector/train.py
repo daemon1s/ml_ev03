@@ -27,7 +27,7 @@ def write_history(history, output):
 def plot_curves(history, path, boundary=None):
     from PIL import Image, ImageDraw
 
-    from plotting import label_font
+    from .plotting import label_font
 
     width, height, margin = 900, 520, 80
     face = label_font()
@@ -96,7 +96,7 @@ def main():
     import keras
     import keras_cv
 
-    from pilot import augmented_batches, sample, targets
+    from .pilot import augmented_batches, sample, targets
 
     keras.utils.set_random_seed(args.seed)
     size = 320

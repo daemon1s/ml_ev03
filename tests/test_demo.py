@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from demo import MODEL_SIZE, detect, draw, prepare, read_threshold, scale_boxes
+from detector.demo import MODEL_SIZE, detect, draw, prepare, read_threshold, scale_boxes
 
 
 class FakeDetector:
