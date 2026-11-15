@@ -18,6 +18,12 @@ DISPLAY_SIDE = 1280
 PAGE_PATH = Path(__file__).parent / 'web' / 'index.html'
 
 
+def describe_reader(reader):
+    if not reader:
+        return None
+    return {'backend': reader[0].backend, 'modelo': reader[0].model}
+
+
 def process(detector, threshold, data, reader=None):
     try:
         with Image.open(io.BytesIO(data)) as opened:
@@ -41,6 +47,7 @@ def process(detector, threshold, data, reader=None):
         'milisegundos': round(elapsed * 1000),
         'milisegundos_lectura': round(reading_elapsed * 1000),
         'lectura_activa': reader is not None,
+        'lector': describe_reader(reader),
         'umbral_lectura': reader[0].min_confidence if reader else None,
         'imagen': 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii'),
     }
@@ -61,6 +68,9 @@ def make_handler(detector, threshold, page, reader=None):
             self.reply(status, 'application/json; charset=utf-8', json.dumps(payload, ensure_ascii=False).encode('utf-8'))
 
         def do_GET(self):
+            if self.path == '/estado':
+                self.reply_json(200, {'lector': describe_reader(reader), 'umbral': threshold})
+                return
             if self.path != '/':
                 self.reply_json(404, {'error': 'No encontrado'})
                 return

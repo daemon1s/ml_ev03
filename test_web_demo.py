@@ -50,6 +50,13 @@ class WebDemoTest(unittest.TestCase):
         self.assertEqual(reading, {'estado': 'leida', 'texto': 'BCDF12', 'motivo': None})
         self.assertTrue(result['lectura_activa'])
 
+    def test_process_reports_which_reader_was_used(self):
+        config = OcrConfig(0.6, 10, 'modelo', 'http://127.0.0.1:1/api/chat', 'gemini')
+        with_reader = process(FakeDetector(), 0.39, jpeg_bytes((640, 480)), (config, lambda crop: 'BCDF12'))
+        without_reader = process(FakeDetector(), 0.39, jpeg_bytes((640, 480)))
+        self.assertEqual(with_reader['lector'], {'backend': 'gemini', 'modelo': 'modelo'})
+        self.assertIsNone(without_reader['lector'])
+
     def test_process_rejects_non_images(self):
         with self.assertRaises(ValueError):
             process(FakeDetector(), 0.39, b'esto no es una imagen')
